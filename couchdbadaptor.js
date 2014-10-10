@@ -15,9 +15,56 @@ A sync adaptor module for synchronising with CouchDB
 function CouchAdaptor(options) {
 	this.wiki = options.wiki;
 	this.logger = new $tw.utils.Logger("CouchAdaptor");
-	this.urlPrefix = '/tw/'; // TODO make configurable
-	this.designDocName = '_design/tw'; // TODO make configurable
+	this.host = 'http://mydb.iriscouch.com'; // TODO make configurable
+	this.urlPrefix = '/tw'; // TODO make configurable
+	this.designDocName = '/_design/tw'; // TODO make configurable
 	this.sessionUrl = '/_session';
+}
+
+function httpRequest(options) { // custom version of $tw.utils.httpRequest to allow for withCredentials to be set
+	var type = options.type || "GET",
+		headers = options.headers || {accept: "application/json"},
+		request = new XMLHttpRequest(),
+		data = "",
+		f,results;
+	// Massage the data hashmap into a string
+	if(options.data) {
+		if(typeof options.data === "string") { // Already a string
+			data = options.data;
+		} else { // A hashmap of strings
+			results = [];
+			$tw.utils.each(options.data,function(dataItem,dataItemTitle) {
+				results.push(dataItemTitle + "=" + encodeURIComponent(dataItem));
+			});
+			data = results.join("&");
+		}
+	}
+	// Add withCredentials to support CORS requests
+	request.withCredentials = true;
+	// Set up the state change handler
+	request.onreadystatechange = function() {
+		if(this.readyState === 4) {
+			if(this.status === 200 || this.status === 201 || this.status === 204) {
+				// Success!
+				options.callback(null,this.responseText,this);
+				return;
+			}
+		// Something went wrong
+		options.callback("XMLHttpRequest error code: " + this.status);
+		}
+	};
+	// Make the request
+	request.open(type,options.url,true);
+	if(headers) {
+		$tw.utils.each(headers,function(header,headerTitle,object) {
+			request.setRequestHeader(headerTitle,header);
+		});
+	}
+	if(data && !$tw.utils.hop(headers,"Content-type")) {
+		request.setRequestHeader("Content-type","application/x-www-form-urlencoded; charset=UTF-8");
+	}
+	request.send(data);
+	return request;
 }
 
 /*
@@ -35,8 +82,8 @@ CouchAdaptor.prototype.getTiddlerInfo = function(tiddler) {
 
 CouchAdaptor.prototype.getSkinnyTiddlers = function(callback) {
 	var self = this;
-	$tw.utils.httpRequest({
-		url: this.urlPrefix + this.designDocName + "/_view/skinny-tiddlers",
+	httpRequest({
+		url: this.host + this.urlPrefix + this.designDocName + "/_view/skinny-tiddlers",
 		callback: function(err, data) {
 			// Check for errors
 			if(err) {
@@ -62,8 +109,8 @@ CouchAdaptor.prototype.saveTiddler = function(tiddler, callback, options) {
 		convertedTiddler._rev = tiddlerInfo.adaptorInfo._rev;
 	}
 	convertedTiddler = JSON.stringify(convertedTiddler, null, false);
-	$tw.utils.httpRequest({
-		url: this.urlPrefix +  "/" + encodeURIComponent(self.mangleTitle(tiddler.fields.title)),
+	httpRequest({
+		url: this.host + this.urlPrefix +  "/" + encodeURIComponent(self.mangleTitle(tiddler.fields.title)),
 		type: "PUT",
 		headers: {
 			"Content-type": "application/json"
@@ -83,8 +130,8 @@ CouchAdaptor.prototype.saveTiddler = function(tiddler, callback, options) {
 
 CouchAdaptor.prototype.loadTiddler = function(title, callback) {
 	var self = this;
-	$tw.utils.httpRequest({
-		url: this.urlPrefix + "/" + encodeURIComponent(self.mangleTitle(title)),
+	httpRequest({
+		url: this.host + this.urlPrefix + "/" + encodeURIComponent(self.mangleTitle(title)),
 		callback: function(err, data, request) {
 			if(err) {
 				return callback(err);
@@ -144,8 +191,8 @@ CouchAdaptor.prototype.deleteTiddler = function(title, callback, options) {
 		callback(null);
 	}
 	// Issue HTTP request to delete the tiddler
-	$tw.utils.httpRequest({
-		url: this.urlPrefix +  "/" + encodeURIComponent(self.mangleTitle(title)),
+	httpRequest({
+		url: this.host + this.urlPrefix + "/" + encodeURIComponent(self.mangleTitle(title)),
 		type: "DELETE",
 		callback: function(err, data, request) {
 			if(err) {
@@ -199,8 +246,8 @@ CouchAdaptor.prototype.convertFromCouch = function(tiddlerFields) {
 }
 
 CouchAdaptor.prototype.getStatus = function(callback) {
-	$tw.utils.httpRequest({
-		url: this.sessionUrl,
+	httpRequest({
+		url: this.host + this.sessionUrl,
 		callback: function(err, data) {
 			if (err) {
 				return callback(err);
@@ -237,7 +284,7 @@ CouchAdaptor.prototype.login = function(username, password, callback) {
 			callback(err);
 		}
 	};
-	$tw.utils.httpRequest(options);
+	httpRequest(options);
 }
 
 CouchAdaptor.prototype.logout = function(callback) {
@@ -248,7 +295,7 @@ CouchAdaptor.prototype.logout = function(callback) {
 			callback(err);
 		}
 	};
-	$tw.utils.httpRequest(options);
+	httpRequest(options);
 }
 
 
